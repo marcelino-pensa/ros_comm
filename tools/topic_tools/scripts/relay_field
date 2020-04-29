@@ -58,12 +58,13 @@ class RelayField(object):
                 '<input> <output topic> <output type> '
                 '<expression on m>\n\n'
                 'Example:\n\trosrun topic_tools relay_field '
-                '/chatter /header std_msgs/Header\n\t'
+                '/chatter std_msgs/String /header std_msgs/Header\n\t'
                 '"seq: 0\n\t stamp:\n\t   secs: 0\n\t   nsecs: 0\n\t   '
                 'frame_id: m.data"\n\n'
                 )
             )
         parser.add_argument('input', help='Input topic or topic field.')
+        parser.add_argument('input_type', help='Input topic type.')
         parser.add_argument('output_topic', help='Output topic.')
         parser.add_argument('output_type', help='Output topic type.')
         parser.add_argument(
@@ -81,6 +82,10 @@ class RelayField(object):
 
         self.expression = args.expression
 
+        # Wait for topic to be first published
+        input_class = roslib.message.get_message_class(args.input_type)
+        rospy.wait_for_message(args.input, input_class)
+
         input_class, input_topic, self.input_fn = rostopic.get_topic_class(
             args.input, blocking=args.wait_for_start)
         if input_topic is None:
@@ -90,7 +95,7 @@ class RelayField(object):
 
         self.output_class = roslib.message.get_message_class(args.output_type)
 
-        self.sub = rospy.Subscriber(input_topic, input_class, self.callback)
+        self.sub = rospy.Subscriber(input_topic, input_class, self.callback, tcp_nodelay=args.tcp_nodelay)
         self.pub = rospy.Publisher(args.output_topic, self.output_class,
                                    queue_size=1)
 
@@ -98,7 +103,7 @@ class RelayField(object):
         if self.input_fn is not None:
             m = self.input_fn(m)
 
-        msg_generation = yaml.load(self.expression)
+        msg_generation = yaml.safe_load(self.expression)
         pub_args = _eval_in_dict_impl(msg_generation, None, {'m': m})
 
         now = rospy.get_rostime()
